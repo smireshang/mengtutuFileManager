@@ -29,6 +29,9 @@ define('UPLOAD_DIR', 'uploads/');
 
 define('MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB
 
+define('ENCRYPTION_METHOD', 'AES-256-CBC');
+define('ENCRYPTION_KEY', hash('sha256', $_SERVER['HTTP_HOST'] . 'file_manager_secret_key_2024'));
+
 // 创建上传目录
 if (!file_exists(UPLOAD_DIR)) {
     mkdir(UPLOAD_DIR, 0755, true);
@@ -62,5 +65,82 @@ function getFileUrl($filename) {
     $script_path = dirname($_SERVER['SCRIPT_NAME']);
     $upload_url = rtrim($script_path, '/') . '/' . UPLOAD_DIR . $filename;
     return $upload_url;
+}
+
+// 加载文件名映射
+function loadFilenameMapping() {
+    $mappingFile = UPLOAD_DIR . '.filename_mapping.json';
+    if (file_exists($mappingFile)) {
+        return json_decode(file_get_contents($mappingFile), true) ?: [];
+    }
+    return [];
+}
+
+// 生成加密文件名
+function generateEncryptedFilename($filename) {
+    return hash('md5', $filename . ENCRYPTION_KEY) . '.enc';
+}
+
+// 从加密文件名获取原始文件名映射
+function getOriginalFilename($encryptedFilename) {
+    // 这里需要一个映射文件来存储原始文件名和加密文件名的对应关系
+    $mappingFile = UPLOAD_DIR . '.filename_mapping.json';
+    if (file_exists($mappingFile)) {
+        $mapping = json_decode(file_get_contents($mappingFile), true);
+        return array_search($encryptedFilename, $mapping);
+    }
+    return false;
+}
+
+// 保存整个文件名映射数组
+function saveFilenameMapping($mapping) {
+    $mappingFile = UPLOAD_DIR . '.filename_mapping.json';
+    file_put_contents($mappingFile, json_encode($mapping, JSON_PRETTY_PRINT));
+}
+
+// 保存单个文件名映射
+function addFilenameMapping($originalFilename, $encryptedFilename) {
+    $mappingFile = UPLOAD_DIR . '.filename_mapping.json';
+    $mapping = [];
+    if (file_exists($mappingFile)) {
+        $mapping = json_decode(file_get_contents($mappingFile), true) ?: [];
+    }
+    $mapping[$originalFilename] = $encryptedFilename;
+    file_put_contents($mappingFile, json_encode($mapping, JSON_PRETTY_PRINT));
+}
+
+// 加密文件内容
+function encryptFile($sourcePath, $destinationPath) {
+    $data = file_get_contents($sourcePath);
+    if ($data === false) {
+        return false;
+    }
+    
+    $iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length(ENCRYPTION_METHOD));
+    $encrypted = openssl_encrypt($data, ENCRYPTION_METHOD, ENCRYPTION_KEY, 0, $iv);
+    
+    if ($encrypted === false) {
+        return false;
+    }
+    
+    // 将IV和加密数据一起存储
+    $encryptedData = base64_encode($iv . $encrypted);
+    return file_put_contents($destinationPath, $encryptedData) !== false;
+}
+
+// 解密文件内容
+function decryptFile($encryptedFilePath) {
+    $encryptedData = file_get_contents($encryptedFilePath);
+    if ($encryptedData === false) {
+        return false;
+    }
+    
+    $data = base64_decode($encryptedData);
+    $ivLength = openssl_cipher_iv_length(ENCRYPTION_METHOD);
+    $iv = substr($data, 0, $ivLength);
+    $encrypted = substr($data, $ivLength);
+    
+    $decrypted = openssl_decrypt($encrypted, ENCRYPTION_METHOD, ENCRYPTION_KEY, 0, $iv);
+    return $decrypted;
 }
 ?>
