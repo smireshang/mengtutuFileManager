@@ -1,5 +1,6 @@
 <?php
 require_once 'auth_check.php';
+require_once 'config.php'; // 引入config.php以使用其中的加密函数
 
 $message = '';
 $messageType = '';
@@ -66,24 +67,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         else {
             // 生成安全的文件名
             $filename = generateSafeFilename($file['name']);
-            $filepath = UPLOAD_DIR . $filename;
             
-            $debugInfo[] = '目标文件路径: ' . $filepath;
+            $encryptedFilename = generateEncryptedFilename($filename);
+            $encryptedFilepath = UPLOAD_DIR . $encryptedFilename;
+            
+            $debugInfo[] = '原始文件名: ' . $filename;
+            $debugInfo[] = '加密文件名: ' . $encryptedFilename;
+            $debugInfo[] = '目标文件路径: ' . $encryptedFilepath;
             
             // 检查临时文件是否存在
             if (!file_exists($file['tmp_name'])) {
                 $message = '临时文件不存在';
                 $messageType = 'error';
             }
-            // 移动上传的文件
-            elseif (move_uploaded_file($file['tmp_name'], $filepath)) {
-                $message = '文件上传成功：' . htmlspecialchars($filename);
+            elseif (encryptFile($file['tmp_name'], $encryptedFilepath)) {
+                addFilenameMapping($filename, $encryptedFilename);
+                
+                $message = '文件上传并加密成功：' . htmlspecialchars($filename);
                 $messageType = 'success';
-                $debugInfo[] = '文件移动成功';
+                $debugInfo[] = '文件加密保存成功';
             } else {
-                $message = '文件保存失败，请检查目录权限';
+                $message = '文件加密保存失败，请检查目录权限';
                 $messageType = 'error';
-                $debugInfo[] = '文件移动失败';
+                $debugInfo[] = '文件加密失败';
             }
         }
     } else {
