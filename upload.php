@@ -132,14 +132,33 @@ function generateSafeFilename($originalName) {
     $extension = pathinfo($originalName, PATHINFO_EXTENSION);
     $basename = pathinfo($originalName, PATHINFO_FILENAME);
     
-    // 清理文件名
-    $basename = preg_replace('/[^a-zA-Z0-9\-_\.]/', '_', $basename);
-    $basename = substr($basename, 0, 50); // 限制长度
+    // 只替换真正不安全的字符，保留中文字符
+    // 移除或替换文件系统不支持的字符：\ / : * ? " < > |
+    $basename = preg_replace('/[\\\\\/:\*\?"<>\|]/', '_', $basename);
     
-    // 如果文件已存在，添加数字后缀
-    $counter = 1;
+    // 移除控制字符和一些特殊字符，但保留中文等Unicode字符
+    $basename = preg_replace('/[\x00-\x1f\x7f]/', '', $basename);
+    
+    // 限制长度（按字节计算，中文字符占用更多字节）
+    if (strlen($basename) > 100) {
+        // 对于UTF-8字符串，使用mb_substr来正确截取
+        $basename = mb_substr($basename, 0, 50, 'UTF-8');
+    }
+    
+    // 如果处理后的文件名为空，使用时间戳
+    if (empty(trim($basename))) {
+        $basename = 'file_' . date('YmdHis');
+    }
+    
+    // 构建完整文件名
     $filename = $basename . '.' . $extension;
-    while (file_exists(UPLOAD_DIR . $filename)) {
+    
+    // 检查文件是否已存在（基于映射，而不是物理文件）
+    $mapping = loadFilenameMapping();
+    $counter = 1;
+    $originalFilename = $filename;
+    
+    while (isset($mapping[$filename])) {
         $filename = $basename . '_' . $counter . '.' . $extension;
         $counter++;
     }
@@ -147,15 +166,13 @@ function generateSafeFilename($originalName) {
     return $filename;
 }
 
-// 格式化字节大小
-function formatBytes($bytes, $precision = 2) {
-    $units = array('B', 'KB', 'MB', 'GB');
-    
-    for ($i = 0; $bytes > 1024 && $i < count($units) - 1; $i++) {
-        $bytes /= 1024;
-    }
-    
-    return round($bytes, $precision) . ' ' . $units[$i];
+// 格式化字节数
+function formatBytes($bytes) {
+    if ($bytes === 0) return '0 B';
+    $k = 1024;
+    $sizes = ['B', 'KB', 'MB', 'GB'];
+    $i = floor(log($bytes) / log($k));
+    return round($bytes / pow($k, $i), 2) . ' ' . $sizes[$i];
 }
 ?>
 <!DOCTYPE html>
@@ -428,18 +445,6 @@ function formatBytes($bytes, $precision = 2) {
             <?php if ($message): ?>
                 <div class="message <?php echo $messageType; ?>">
                     <?php echo $message; ?>
-                </div>
-            <?php endif; ?>
-            
-            <!-- 添加调试信息显示 -->
-            <?php if (!empty($debugInfo)): ?>
-                <div class="debug-info">
-                    <h3>调试信息：</h3>
-                    <ul>
-                        <?php foreach ($debugInfo as $info): ?>
-                            <li><?php echo htmlspecialchars($info); ?></li>
-                        <?php endforeach; ?>
-                    </ul>
                 </div>
             <?php endif; ?>
             
