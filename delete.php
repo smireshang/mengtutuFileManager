@@ -1,6 +1,8 @@
 <?php
 require_once 'auth_check.php';
 
+date_default_timezone_set('Asia/Shanghai');
+
 $message = '';
 $messageType = '';
 
@@ -9,29 +11,46 @@ if (!isset($_GET['file'])) {
     exit;
 }
 
-$filename = $_GET['file'];
-$filepath = UPLOAD_DIR . $filename;
+$originalFilename = $_GET['file'];
 
-// 安全检查：确保文件存在且在上传目录内
-if (!file_exists($filepath) || !is_file($filepath)) {
-    $message = '文件不存在';
-    $messageType = 'error';
+$filenameMapping = loadFilenameMapping();
+$encryptedFilename = null;
+
+// Find the encrypted filename for the original filename
+if (isset($filenameMapping[$originalFilename])) {
+    $encryptedFilename = $filenameMapping[$originalFilename];
 } else {
-    // 检查文件路径是否在允许的目录内（防止目录遍历攻击）
-    $realPath = realpath($filepath);
-    $uploadPath = realpath(UPLOAD_DIR);
+    $message = '文件映射不存在';
+    $messageType = 'error';
+}
+
+if ($encryptedFilename) {
+    $filepath = UPLOAD_DIR . $encryptedFilename;
     
-    if (strpos($realPath, $uploadPath) !== 0) {
-        $message = '访问被拒绝';
+    // 安全检查：确保文件存在且在上传目录内
+    if (!file_exists($filepath) || !is_file($filepath)) {
+        $message = '加密文件不存在';
         $messageType = 'error';
     } else {
-        // 执行删除操作
-        if (unlink($filepath)) {
-            $message = '文件删除成功';
-            $messageType = 'success';
-        } else {
-            $message = '文件删除失败';
+        // 检查文件路径是否在允许的目录内（防止目录遍历攻击）
+        $realPath = realpath($filepath);
+        $uploadPath = realpath(UPLOAD_DIR);
+        
+        if (strpos($realPath, $uploadPath) !== 0) {
+            $message = '访问被拒绝';
             $messageType = 'error';
+        } else {
+            if (unlink($filepath)) {
+                // Remove from filename mapping
+                unset($filenameMapping[$originalFilename]);
+                saveFilenameMapping($filenameMapping);
+                
+                $message = '文件删除成功';
+                $messageType = 'success';
+            } else {
+                $message = '文件删除失败';
+                $messageType = 'error';
+            }
         }
     }
 }
