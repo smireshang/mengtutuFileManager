@@ -1,20 +1,33 @@
 <?php
 require_once 'auth_check.php';
 
-// 获取文件列表
+date_default_timezone_set('Asia/Shanghai');
+
 function getFileList() {
     $files = [];
-    if (is_dir(UPLOAD_DIR)) {
-        $fileList = scandir(UPLOAD_DIR);
-        foreach ($fileList as $file) {
-            if ($file != '.' && $file != '..' && is_file(UPLOAD_DIR . $file)) {
-                $filepath = UPLOAD_DIR . $file;
+    $mappingFile = UPLOAD_DIR . '.filename_mapping.json';
+    
+    if (file_exists($mappingFile)) {
+        $mapping = json_decode(file_get_contents($mappingFile), true) ?: [];
+        
+        foreach ($mapping as $originalName => $encryptedName) {
+            $encryptedPath = UPLOAD_DIR . $encryptedName;
+            if (file_exists($encryptedPath) && is_file($encryptedPath)) {
+                // 获取文件扩展名来确定类型
+                $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+                $mimeTypes = [
+                    'jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
+                    'gif' => 'image/gif', 'pdf' => 'application/pdf', 'txt' => 'text/plain',
+                    'doc' => 'application/msword', 'docx' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'zip' => 'application/zip', 'rar' => 'application/x-rar-compressed'
+                ];
+                
                 $files[] = [
-                    'name' => $file,
-                    'size' => filesize($filepath),
-                    'modified' => filemtime($filepath),
-                    'type' => mime_content_type($filepath),
-                    'extension' => strtolower(pathinfo($file, PATHINFO_EXTENSION))
+                    'name' => $originalName,
+                    'size' => filesize($encryptedPath),
+                    'modified' => filemtime($encryptedPath),
+                    'type' => isset($mimeTypes[$extension]) ? $mimeTypes[$extension] : 'application/octet-stream',
+                    'extension' => $extension
                 ];
             }
         }
@@ -144,6 +157,89 @@ $totalSize = array_sum(array_column($files, 'size'));
         
         .nav a.active {
             background: #764ba2;
+        }
+        
+        /* Added system info panel styles */
+        .system-info-btn {
+            background: #17a2b8 !important;
+        }
+        
+        .system-info-btn:hover {
+            background: #138496 !important;
+        }
+        
+        .system-info-panel {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+        
+        .system-info-header {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+            color: white;
+            padding: 1.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .system-info-header h2 {
+            font-size: 1.3rem;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        
+        .close-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+        
+        .system-info-content {
+            padding: 1.5rem;
+        }
+        
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
+        }
+        
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #17a2b8;
+        }
+        
+        .info-label {
+            font-weight: 500;
+            color: #333;
+        }
+        
+        .info-value {
+            color: #666;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            text-align: right;
+            word-break: break-all;
         }
         
         .stats {
@@ -346,6 +442,21 @@ $totalSize = array_sum(array_column($files, 'size'));
                 flex-direction: column;
                 align-items: stretch;
             }
+            
+            /* Added responsive styles for system info */
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .info-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+            
+            .info-value {
+                text-align: left;
+            }
         }
     </style>
 </head>
@@ -362,6 +473,61 @@ $totalSize = array_sum(array_column($files, 'size'));
         <div class="nav">
             <a href="index.php" class="active">文件列表</a>
             <a href="upload.php">文件上传</a>
+            <a href="#" class="system-info-btn" onclick="toggleSystemInfo()">系统信息</a>
+        </div>
+        
+        <!-- Added system information panel -->
+        <div class="system-info-panel" id="systemInfoPanel" style="display: none;">
+            <div class="system-info-header">
+                <h2>系统信息</h2>
+                <button class="close-btn" onclick="toggleSystemInfo()">×</button>
+            </div>
+            <div class="system-info-content">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="info-label">PHP版本</div>
+                        <div class="info-value"><?php echo phpversion(); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">系统时间</div>
+                        <div class="info-value" id="currentTime"><?php echo date('Y-m-d H:i:s'); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">服务器操作系统</div>
+                        <div class="info-value"><?php echo php_uname('s') . ' ' . php_uname('r'); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">文件上传路径</div>
+                        <div class="info-value"><?php echo realpath(UPLOAD_DIR); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">最大上传大小</div>
+                        <div class="info-value"><?php echo ini_get('upload_max_filesize'); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">POST最大大小</div>
+                        <div class="info-value"><?php echo ini_get('post_max_size'); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">内存限制</div>
+                        <div class="info-value"><?php echo ini_get('memory_limit'); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">磁盘总空间</div>
+                        <div class="info-value"><?php echo formatBytes(disk_total_space('.')); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">磁盘可用空间</div>
+                        <div class="info-value"><?php echo formatBytes(disk_free_space('.')); ?></div>
+                    </div>
+                    <div class="info-item">
+                        <div class="info-label">加密状态</div>
+                        <div class="info-value">
+                            <span style="color: #28a745;">✓ 已启用 AES-256-CBC</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <div class="stats">
@@ -381,7 +547,7 @@ $totalSize = array_sum(array_column($files, 'size'));
         
         <div class="files-section">
             <div class="files-header">
-                <h2>我的文件</h2>
+                <h2>我的文件 🔒</h2>
                 <input type="text" class="search-box" placeholder="搜索文件..." id="searchBox">
             </div>
             
@@ -399,7 +565,7 @@ $totalSize = array_sum(array_column($files, 'size'));
                                 <?php echo getFileIcon($file['extension']); ?>
                             </div>
                             <div class="file-info">
-                                <div class="file-name"><?php echo htmlspecialchars($file['name']); ?></div>
+                                <div class="file-name"><?php echo htmlspecialchars($file['name']); ?> 🔒</div>
                                 <div class="file-meta">
                                     <span><?php echo formatBytes($file['size']); ?></span>
                                     <span><?php echo date('Y-m-d H:i:s', $file['modified']); ?></span>
@@ -439,6 +605,31 @@ $totalSize = array_sum(array_column($files, 'size'));
                 }
             });
         });
+        
+        function toggleSystemInfo() {
+            const panel = document.getElementById('systemInfoPanel');
+            if (panel.style.display === 'none') {
+                panel.style.display = 'block';
+                updateTime();
+            } else {
+                panel.style.display = 'none';
+            }
+        }
+        
+        function updateTime() {
+            const timeElement = document.getElementById('currentTime');
+            if (timeElement && document.getElementById('systemInfoPanel').style.display !== 'none') {
+                const now = new Date();
+                const chinaTime = new Date(now.getTime() + (8 * 60 * 60 * 1000) + (now.getTimezoneOffset() * 60 * 1000));
+                timeElement.textContent = chinaTime.getFullYear() + '-' + 
+                    String(chinaTime.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(chinaTime.getDate()).padStart(2, '0') + ' ' + 
+                    String(chinaTime.getHours()).padStart(2, '0') + ':' + 
+                    String(chinaTime.getMinutes()).padStart(2, '0') + ':' + 
+                    String(chinaTime.getSeconds()).padStart(2, '0');
+                setTimeout(updateTime, 1000);
+            }
+        }
         
         // 重命名文件
         function renameFile(filename) {
