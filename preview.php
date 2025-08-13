@@ -6,27 +6,40 @@ if (!isset($_GET['file'])) {
     exit;
 }
 
-$filename = $_GET['file'];
-$filepath = UPLOAD_DIR . $filename;
+$originalFilename = $_GET['file'];
 
-// 安全检查：确保文件存在且在上传目录内
-if (!file_exists($filepath) || !is_file($filepath)) {
+$mappingFile = UPLOAD_DIR . '.filename_mapping.json';
+$filenameMapping = [];
+if (file_exists($mappingFile)) {
+    $mappingContent = file_get_contents($mappingFile);
+    $filenameMapping = json_decode($mappingContent, true) ?: [];
+}
+
+$encryptedFilename = isset($filenameMapping[$originalFilename]) ? $filenameMapping[$originalFilename] : null;
+
+if (!$encryptedFilename) {
+    header('Location: index.php?error=file_not_found');
+    exit;
+}
+
+$encryptedFilepath = UPLOAD_DIR . $encryptedFilename;
+
+// 安全检查：确保加密文件存在且在上传目录内
+if (!file_exists($encryptedFilepath) || !is_file($encryptedFilepath)) {
     header('Location: index.php?error=file_not_found');
     exit;
 }
 
 // 检查文件路径是否在允许的目录内（防止目录遍历攻击）
-$realPath = realpath($filepath);
+$realPath = realpath($encryptedFilepath);
 $uploadPath = realpath(UPLOAD_DIR);
 if (strpos($realPath, $uploadPath) !== 0) {
     header('Location: index.php?error=access_denied');
     exit;
 }
 
-// 获取文件信息
-$fileSize = filesize($filepath);
-$mimeType = mime_content_type($filepath);
-$extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+$encryptedFileSize = filesize($encryptedFilepath);
+$extension = strtolower(pathinfo($originalFilename, PATHINFO_EXTENSION));
 
 // 支持预览的文件类型
 $imageTypes = ['jpg', 'jpeg', 'png', 'gif'];
@@ -40,6 +53,16 @@ if (!$isImage && !$isText) {
     exit;
 }
 
+$actualFileSize = $encryptedFileSize;
+$textContent = '';
+if ($isText) {
+    $decryptedContent = decryptFile($encryptedFilepath);
+    if ($decryptedContent !== false) {
+        $actualFileSize = strlen($decryptedContent);
+        $textContent = $decryptedContent;
+    }
+}
+
 // 格式化文件大小
 function formatBytes($bytes, $precision = 2) {
     $units = array('B', 'KB', 'MB', 'GB');
@@ -51,14 +74,13 @@ function formatBytes($bytes, $precision = 2) {
     return round($bytes, $precision) . ' ' . $units[$i];
 }
 
-
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>文件预览 - <?php echo htmlspecialchars($filename); ?></title>
+    <title>文件预览 - <?php echo htmlspecialchars($originalFilename); ?></title>
     <style>
         * {
             margin: 0;
@@ -198,6 +220,15 @@ function formatBytes($bytes, $precision = 2) {
             margin-bottom: 1rem;
         }
         
+        .encryption-badge {
+            background: #28a745;
+            color: white;
+            padding: 0.2rem 0.5rem;
+            border-radius: 3px;
+            font-size: 0.8rem;
+            margin-left: 0.5rem;
+        }
+        
         @media (max-width: 768px) {
             .header {
                 flex-direction: column;
@@ -224,7 +255,7 @@ function formatBytes($bytes, $precision = 2) {
     <div class="header">
         <h1>文件预览</h1>
         <div class="header-actions">
-            <a href="download.php?file=<?php echo urlencode($filename); ?>" class="btn btn-primary">下载文件</a>
+            <a href="download.php?file=<?php echo urlencode($originalFilename); ?>" class="btn btn-primary">下载文件</a>
             <a href="index.php" class="btn btn-secondary">返回列表</a>
         </div>
     </div>
@@ -232,38 +263,44 @@ function formatBytes($bytes, $precision = 2) {
     <div class="container">
         <div class="preview-section">
             <div class="preview-header">
-                <h2><?php echo htmlspecialchars($filename); ?></h2>
+                <h2>
+                    <?php echo htmlspecialchars($originalFilename); ?>
+                    <span class="encryption-badge">🔒 已加密</span>
+                </h2>
                 <div class="file-meta">
-                    <span>文件大小: <?php echo formatBytes($fileSize); ?></span>
+                    <span>文件大小: <?php echo formatBytes($actualFileSize); ?></span>
                     <span>文件类型: <?php echo strtoupper($extension); ?></span>
-                    <span>修改时间: <?php echo date('Y-m-d H:i:s', filemtime($filepath)); ?></span>
+                    <span>修改时间: <?php echo date('Y-m-d H:i:s', filemtime($encryptedFilepath)); ?></span>
                 </div>
             </div>
             
             <div class="preview-content">
                 <?php if ($isImage): ?>
                     <div class="image-preview">
-                        <!-- Using serve_file.php to properly serve images from uploads directory -->
-                        <img src="serve_file.php?file=<?php echo urlencode($filename); ?>" alt="<?php echo htmlspecialchars($filename); ?>">
+                        <!-- Using serve_file.php with original filename to properly decrypt and serve images -->
+                        <img src="serve_file.php?file=<?php echo urlencode($originalFilename); ?>" alt="<?php echo htmlspecialchars($originalFilename); ?>">
                     </div>
                 <?php elseif ($isText): ?>
                     <div class="text-preview">
                         <?php
-                        $content = file_get_contents($filepath);
-                        // 限制显示的文本长度，防止过大文件影响性能
-                        if (strlen($content) > 50000) {
-                            $content = substr($content, 0, 50000) . "\n\n... (文件内容过长，仅显示前50000个字符)";
+                        if ($textContent !== '') {
+                            // 限制显示的文本长度，防止过大文件影响性能
+                            if (strlen($textContent) > 50000) {
+                                $textContent = substr($textContent, 0, 50000) . "\n\n... (文件内容过长，仅显示前50000个字符)";
+                            }
+                            echo htmlspecialchars($textContent);
+                        } else {
+                            echo "无法解密文件内容";
                         }
-                        echo htmlspecialchars($content);
                         ?>
                     </div>
                 <?php endif; ?>
             </div>
             
             <div class="preview-actions">
-                <a href="download.php?file=<?php echo urlencode($filename); ?>" class="btn btn-primary">下载文件</a>
-                <button class="btn btn-secondary" onclick="renameFile('<?php echo htmlspecialchars($filename); ?>')">重命名</button>
-                <button class="btn" style="background: #dc3545; color: white;" onclick="deleteFile('<?php echo htmlspecialchars($filename); ?>')">删除文件</button>
+                <a href="download.php?file=<?php echo urlencode($originalFilename); ?>" class="btn btn-primary">下载文件</a>
+                <button class="btn btn-secondary" onclick="renameFile('<?php echo htmlspecialchars($originalFilename); ?>')">重命名</button>
+                <button class="btn" style="background: #dc3545; color: white;" onclick="deleteFile('<?php echo htmlspecialchars($originalFilename); ?>')">删除文件</button>
             </div>
         </div>
     </div>
