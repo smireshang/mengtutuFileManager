@@ -7,7 +7,14 @@ if (!isset($_GET['file'])) {
 }
 
 $filename = $_GET['file'];
-$encryptedFilename = generateEncryptedFilename($filename);
+
+$filenameMapping = loadFilenameMapping();
+if (!isset($filenameMapping[$filename])) {
+    header('Location: index.php?error=file_not_found');
+    exit;
+}
+
+$encryptedFilename = $filenameMapping[$filename];
 $encryptedFilepath = UPLOAD_DIR . $encryptedFilename;
 
 // 安全检查：确保加密文件存在且在上传目录内
