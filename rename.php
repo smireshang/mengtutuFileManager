@@ -12,11 +12,11 @@ if (!isset($_GET['old']) || !isset($_GET['new'])) {
 $oldName = $_GET['old'];
 $newName = $_GET['new'];
 
-$oldPath = UPLOAD_DIR . $oldName;
-$newPath = UPLOAD_DIR . $newName;
+// 加载文件名映射
+$filenameMapping = loadFilenameMapping();
 
-// 验证原文件存在
-if (!file_exists($oldPath) || !is_file($oldPath)) {
+// 验证原文件在映射中存在
+if (!isset($filenameMapping[$oldName])) {
     $message = '原文件不存在';
     $messageType = 'error';
 }
@@ -25,8 +25,8 @@ elseif (empty($newName) || $newName === $oldName) {
     $message = '新文件名无效';
     $messageType = 'error';
 }
-// 检查新文件名是否已存在
-elseif (file_exists($newPath)) {
+// 检查新文件名是否已存在于映射中
+elseif (isset($filenameMapping[$newName])) {
     $message = '文件名已存在';
     $messageType = 'error';
 }
@@ -37,12 +37,27 @@ elseif (!isValidFilename($newName)) {
 }
 // 执行重命名
 else {
-    if (rename($oldPath, $newPath)) {
-        $message = '文件重命名成功';
-        $messageType = 'success';
-    } else {
-        $message = '文件重命名失败';
+    // 获取加密文件名
+    $encryptedFilename = $filenameMapping[$oldName];
+    $encryptedFilepath = UPLOAD_DIR . $encryptedFilename;
+    
+    // 验证加密文件确实存在
+    if (!file_exists($encryptedFilepath) || !is_file($encryptedFilepath)) {
+        $message = '加密文件不存在';
         $messageType = 'error';
+    } else {
+        // 更新文件名映射：移除旧映射，添加新映射
+        unset($filenameMapping[$oldName]);
+        $filenameMapping[$newName] = $encryptedFilename;
+        
+        // 保存更新后的映射
+        if (saveFilenameMapping($filenameMapping)) {
+            $message = '文件重命名成功';
+            $messageType = 'success';
+        } else {
+            $message = '文件重命名失败：无法更新文件映射';
+            $messageType = 'error';
+        }
     }
 }
 
@@ -72,6 +87,7 @@ function isValidFilename($filename) {
     
     return true;
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="zh-CN">
