@@ -27,7 +27,7 @@ define('UPLOAD_DIR', 'uploads/');
 // define('UPLOAD_DIR', rtrim($base_path, '/') . '/uploads/');
 // define('UPLOAD_URL', rtrim($base_path, '/') . '/uploads/'); // 用于Web访问
 
-define('MAX_FILE_SIZE', 10 * 1024 * 1024); // 10MB
+define('MAX_FILE_SIZE', 50 * 1024 * 1024); // 50MB
 
 define('ENCRYPTION_METHOD', 'AES-256-CBC');
 define('ENCRYPTION_KEY', hash('sha256', $_SERVER['HTTP_HOST'] . 'file_manager_secret_key_2024'));
@@ -95,7 +95,28 @@ function getOriginalFilename($encryptedFilename) {
 // 保存整个文件名映射数组
 function saveFilenameMapping($mapping) {
     $mappingFile = UPLOAD_DIR . '.filename_mapping.json';
-    file_put_contents($mappingFile, json_encode($mapping, JSON_PRETTY_PRINT));
+    
+    // 检查目录是否可写
+    if (!is_writable(UPLOAD_DIR)) {
+        error_log("文件映射保存失败：上传目录不可写 - " . UPLOAD_DIR);
+        return false;
+    }
+    
+    // 尝试编码JSON
+    $jsonData = json_encode($mapping, JSON_PRETTY_PRINT);
+    if ($jsonData === false) {
+        error_log("文件映射保存失败：JSON编码失败");
+        return false;
+    }
+    
+    // 尝试写入文件
+    $result = file_put_contents($mappingFile, $jsonData);
+    if ($result === false) {
+        error_log("文件映射保存失败：无法写入文件 - " . $mappingFile);
+        return false;
+    }
+    
+    return true;
 }
 
 // 保存单个文件名映射
@@ -106,7 +127,8 @@ function addFilenameMapping($originalFilename, $encryptedFilename) {
         $mapping = json_decode(file_get_contents($mappingFile), true) ?: [];
     }
     $mapping[$originalFilename] = $encryptedFilename;
-    file_put_contents($mappingFile, json_encode($mapping, JSON_PRETTY_PRINT));
+    
+    return saveFilenameMapping($mapping);
 }
 
 // 加密文件内容
