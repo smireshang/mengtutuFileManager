@@ -526,6 +526,8 @@ $totalSize = array_sum(array_column($files, 'size'));
                             <span style="color: #28a745;">✓ 已启用 AES-256-CBC</span>
                         </div>
                     </div>
+                    <!-- Added cache stats section -->
+                    <div id="cacheStatsSection"></div>
                 </div>
             </div>
         </div>
@@ -611,8 +613,76 @@ $totalSize = array_sum(array_column($files, 'size'));
             if (panel.style.display === 'none') {
                 panel.style.display = 'block';
                 updateTime();
+                showCacheStats();
             } else {
                 panel.style.display = 'none';
+            }
+        }
+        
+        function showCacheStats() {
+            // 确保缓存管理器已加载
+            if (typeof fileCacheManager === 'undefined') {
+                // 动态加载缓存管理器
+                const script = document.createElement('script');
+                script.src = 'js/cache-manager.js';
+                script.onload = function() {
+                    displayCacheStats();
+                };
+                document.head.appendChild(script);
+            } else {
+                displayCacheStats();
+            }
+        }
+        
+        function displayCacheStats() {
+            const stats = fileCacheManager.getCacheStats();
+            
+            // 查找系统信息面板
+            const infoGrid = document.querySelector('.info-grid');
+            
+            // 检查是否已经添加了缓存信息
+            if (!document.getElementById('cacheStatsSection')) {
+                const cacheStatsHTML = `
+                    <div id="cacheStatsSection">
+                        <div class="info-item">
+                            <div class="info-label">缓存文件数</div>
+                            <div class="info-value">${stats.totalFiles} 个</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">缓存大小</div>
+                            <div class="info-value">${stats.formattedSize} / ${stats.maxSize}</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">缓存使用率</div>
+                            <div class="info-value">${stats.usagePercent}%</div>
+                        </div>
+                        <div class="info-item">
+                            <div class="info-label">缓存操作</div>
+                            <div class="info-value">
+                                <button onclick="clearAllCache()" style="background: #dc3545; color: white; border: none; padding: 0.25rem 0.5rem; border-radius: 3px; font-size: 0.8rem; cursor: pointer;">清空缓存</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                infoGrid.insertAdjacentHTML('beforeend', cacheStatsHTML);
+            } else {
+                // 更新现有的缓存统计信息
+                document.querySelector('#cacheStatsSection .info-item:nth-child(1) .info-value').textContent = `${stats.totalFiles} 个`;
+                document.querySelector('#cacheStatsSection .info-item:nth-child(2) .info-value').textContent = `${stats.formattedSize} / ${stats.maxSize}`;
+                document.querySelector('#cacheStatsSection .info-item:nth-child(3) .info-value').textContent = `${stats.usagePercent}%`;
+            }
+        }
+        
+        function clearAllCache() {
+            if (confirm('确定要清空所有缓存吗？这将删除所有已缓存的文件内容。')) {
+                if (typeof fileCacheManager !== 'undefined') {
+                    fileCacheManager.clearAllCache();
+                    alert('缓存已清空');
+                    // 更新统计信息
+                    if (document.getElementById('systemInfoPanel').style.display !== 'none') {
+                        displayCacheStats();
+                    }
+                }
             }
         }
         
@@ -635,6 +705,9 @@ $totalSize = array_sum(array_column($files, 'size'));
         function renameFile(filename) {
             const newName = prompt('请输入新的文件名：', filename);
             if (newName && newName !== filename) {
+                if (typeof fileCacheManager !== 'undefined') {
+                    fileCacheManager.removeCache(filename);
+                }
                 window.location.href = `rename.php?old=${encodeURIComponent(filename)}&new=${encodeURIComponent(newName)}`;
             }
         }
@@ -642,7 +715,48 @@ $totalSize = array_sum(array_column($files, 'size'));
         // 删除文件
         function deleteFile(filename) {
             if (confirm(`确定要删除文件 "${filename}" 吗？此操作不可撤销。`)) {
+                if (typeof fileCacheManager !== 'undefined') {
+                    fileCacheManager.removeCache(filename);
+                }
                 window.location.href = `delete.php?file=${encodeURIComponent(filename)}`;
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            // 延迟加载缓存管理器，避免阻塞页面渲染
+            setTimeout(function() {
+                if (typeof fileCacheManager === 'undefined') {
+                    const script = document.createElement('script');
+                    script.src = 'js/cache-manager.js';
+                    script.onload = function() {
+                        // 预加载前几个文件
+                        preloadTopFiles();
+                    };
+                    document.head.appendChild(script);
+                } else {
+                    preloadTopFiles();
+                }
+            }, 1000);
+        });
+        
+        function preloadTopFiles() {
+            // 预加载前3个文件（通常是最新的文件）
+            const fileItems = document.querySelectorAll('.file-item');
+            const maxPreload = Math.min(3, fileItems.length);
+            
+            for (let i = 0; i < maxPreload; i++) {
+                const fileItem = fileItems[i];
+                const filename = fileItem.querySelector('.file-name').textContent.replace(' 🔒', '');
+                const modifiedText = fileItem.querySelector('.file-meta span:nth-child(2)').textContent;
+                
+                // 解析修改时间为时间戳
+                const modifiedDate = new Date(modifiedText);
+                const fileModified = Math.floor(modifiedDate.getTime() / 1000);
+                
+                // 异步预加载
+                setTimeout(() => {
+                    fileCacheManager.preloadFile(filename, fileModified);
+                }, i * 500); // 错开加载时间
             }
         }
     </script>
