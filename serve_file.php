@@ -6,8 +6,22 @@ if (!isset($_GET['file'])) {
     exit('File not found');
 }
 
-$filename = $_GET['file'];
-$encryptedFilename = generateEncryptedFilename($filename);
+$originalFilename = $_GET['file'];
+
+$mappingFile = UPLOAD_DIR . '.filename_mapping.json';
+$filenameMapping = [];
+if (file_exists($mappingFile)) {
+    $mappingContent = file_get_contents($mappingFile);
+    $filenameMapping = json_decode($mappingContent, true) ?: [];
+}
+
+$encryptedFilename = isset($filenameMapping[$originalFilename]) ? $filenameMapping[$originalFilename] : null;
+
+if (!$encryptedFilename) {
+    http_response_code(404);
+    exit('File not found in mapping');
+}
+
 $encryptedFilepath = UPLOAD_DIR . $encryptedFilename;
 
 // 安全检查：确保加密文件存在且在上传目录内
@@ -31,7 +45,7 @@ if ($decryptedContent === false) {
 }
 
 // 根据原始文件扩展名确定MIME类型
-$extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+$extension = strtolower(pathinfo($originalFilename, PATHINFO_EXTENSION));
 $mimeTypes = [
     'jpg' => 'image/jpeg',
     'jpeg' => 'image/jpeg',
@@ -54,13 +68,13 @@ header('Cache-Control: public, max-age=3600'); // 缓存1小时
 $imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'];
 
 if (in_array($extension, $imageTypes)) {
-    header('Content-Disposition: inline; filename="' . $filename . '"');
+    header('Content-Disposition: inline; filename="' . $originalFilename . '"');
 } else {
     // 对于非图片文件，如果是预览模式，仍然内联显示
     if (isset($_GET['preview']) && $_GET['preview'] == '1') {
-        header('Content-Disposition: inline; filename="' . $filename . '"');
+        header('Content-Disposition: inline; filename="' . $originalFilename . '"');
     } else {
-        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Content-Disposition: attachment; filename="' . $originalFilename . '"');
     }
 }
 
